@@ -2,13 +2,15 @@ package middleware
 
 import (
 	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/common/config"
 	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/model"
 	"github.com/songquanpeng/one-api/relay/channeltype"
-	"net/http"
-	"strconv"
 )
 
 type ModelRequest struct {
@@ -63,7 +65,14 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	c.Set("channel_name", channel.Name)
 	c.Set("model_mapping", channel.GetModelMapping())
 	c.Set("original_model", modelName) // for retry
-	c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", channel.Key))
+	// allow to use X-Authorization for backward compatibility
+	authorization := channel.Key
+	xAuthorization := c.Request.Header.Get("X-Authorization")
+	xApiKey := strings.TrimPrefix(xAuthorization, "Bearer ")
+	if xApiKey != "" {
+		authorization = xApiKey
+	}
+	c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", authorization))
 	c.Set("base_url", channel.GetBaseURL())
 	// this is for backward compatibility
 	switch channel.Type {
