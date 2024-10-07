@@ -7,24 +7,24 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/songquanpeng/one-api/common/config"
+	"github.com/songquanpeng/one-api/common/ctxkey"
 	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/model"
 	"github.com/songquanpeng/one-api/relay/channeltype"
 )
 
 type ModelRequest struct {
-	Model string `json:"model"`
+	Model string `json:"model" form:"model"`
 }
 
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
-		userId := c.GetInt("id")
+		userId := c.GetInt(ctxkey.Id)
 		userGroup, _ := model.CacheGetUserGroup(userId)
-		c.Set("group", userGroup)
+		c.Set(ctxkey.Group, userGroup)
 		var requestModel string
 		var channel *model.Channel
-		channelId, ok := c.Get("specific_channel_id")
+		channelId, ok := c.Get(ctxkey.SpecificChannelId)
 		if ok {
 			id, err := strconv.Atoi(channelId.(string))
 			if err != nil {
@@ -41,7 +41,7 @@ func Distribute() func(c *gin.Context) {
 				return
 			}
 		} else {
-			requestModel := c.GetString("request_model")
+			requestModel = c.GetString(ctxkey.RequestModel)
 			var err error
 			channel, err = model.CacheGetRandomSatisfiedChannel(userGroup, requestModel, false)
 			if err != nil {
@@ -60,11 +60,11 @@ func Distribute() func(c *gin.Context) {
 }
 
 func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string) {
-	c.Set("channel", channel.Type)
-	c.Set("channel_id", channel.Id)
-	c.Set("channel_name", channel.Name)
-	c.Set("model_mapping", channel.GetModelMapping())
-	c.Set("original_model", modelName) // for retry
+	c.Set(ctxkey.Channel, channel.Type)
+	c.Set(ctxkey.ChannelId, channel.Id)
+	c.Set(ctxkey.ChannelName, channel.Name)
+	c.Set(ctxkey.ModelMapping, channel.GetModelMapping())
+	c.Set(ctxkey.OriginalModel, modelName) // for retry
 	// allow to use X-Authorization for backward compatibility
 	authorization := channel.Key
 	xAuthorization := c.Request.Header.Get("X-Authorization")
@@ -73,22 +73,32 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 		authorization = xApiKey
 	}
 	c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", authorization))
-	c.Set("base_url", channel.GetBaseURL())
-	// this is for backward compatibility
-	switch channel.Type {
-	case channeltype.Azure:
-		c.Set(config.KeyAPIVersion, channel.Other)
-	case channeltype.Xunfei:
-		c.Set(config.KeyAPIVersion, channel.Other)
-	case channeltype.Gemini:
-		c.Set(config.KeyAPIVersion, channel.Other)
-	case channeltype.AIProxyLibrary:
-		c.Set(config.KeyLibraryID, channel.Other)
-	case channeltype.Ali:
-		c.Set(config.KeyPlugin, channel.Other)
-	}
+	c.Set(ctxkey.BaseURL, channel.GetBaseURL())
 	cfg, _ := channel.LoadConfig()
-	for k, v := range cfg {
-		c.Set(config.KeyPrefix+k, v)
+	// this is for backward compatibility
+	if channel.Other != nil {
+		switch channel.Type {
+		case channeltype.Azure:
+			if cfg.APIVersion == "" {
+				cfg.APIVersion = *channel.Other
+			}
+		case channeltype.Xunfei:
+			if cfg.APIVersion == "" {
+				cfg.APIVersion = *channel.Other
+			}
+		case channeltype.Gemini:
+			if cfg.APIVersion == "" {
+				cfg.APIVersion = *channel.Other
+			}
+		case channeltype.AIProxyLibrary:
+			if cfg.LibraryID == "" {
+				cfg.LibraryID = *channel.Other
+			}
+		case channeltype.Ali:
+			if cfg.Plugin == "" {
+				cfg.Plugin = *channel.Other
+			}
+		}
 	}
+	c.Set(ctxkey.Config, cfg)
 }

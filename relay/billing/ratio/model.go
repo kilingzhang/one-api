@@ -2,8 +2,10 @@ package ratio
 
 import (
 	"encoding/json"
-	"github.com/songquanpeng/one-api/common/logger"
+	"fmt"
 	"strings"
+
+	"github.com/songquanpeng/one-api/common/logger"
 )
 
 const (
@@ -26,11 +28,19 @@ var ModelRatio = map[string]float64{
 	"gpt-4-32k":               30,
 	"gpt-4-32k-0314":          30,
 	"gpt-4-32k-0613":          30,
-	"gpt-4-1106-preview":      5,    // $0.01 / 1K tokens
-	"gpt-4-0125-preview":      5,    // $0.01 / 1K tokens
-	"gpt-4-turbo-preview":     5,    // $0.01 / 1K tokens
-	"gpt-4-vision-preview":    5,    // $0.01 / 1K tokens
-	"gpt-3.5-turbo":           0.25, // $0.0005 / 1K tokens
+	"gpt-4-1106-preview":      5,     // $0.01 / 1K tokens
+	"gpt-4-0125-preview":      5,     // $0.01 / 1K tokens
+	"gpt-4-turbo-preview":     5,     // $0.01 / 1K tokens
+	"gpt-4-turbo":             5,     // $0.01 / 1K tokens
+	"gpt-4-turbo-2024-04-09":  5,     // $0.01 / 1K tokens
+	"gpt-4o":                  2.5,   // $0.005 / 1K tokens
+	"chatgpt-4o-latest":       2.5,   // $0.005 / 1K tokens
+	"gpt-4o-2024-05-13":       2.5,   // $0.005 / 1K tokens
+	"gpt-4o-2024-08-06":       1.25,  // $0.0025 / 1K tokens
+	"gpt-4o-mini":             0.075, // $0.00015 / 1K tokens
+	"gpt-4o-mini-2024-07-18":  0.075, // $0.00015 / 1K tokens
+	"gpt-4-vision-preview":    5,     // $0.01 / 1K tokens
+	"gpt-3.5-turbo":           0.25,  // $0.0005 / 1K tokens
 	"gpt-3.5-turbo-0301":      0.75,
 	"gpt-3.5-turbo-0613":      0.75,
 	"gpt-3.5-turbo-16k":       1.5, // $0.003 / 1K tokens
@@ -65,12 +75,13 @@ var ModelRatio = map[string]float64{
 	"dall-e-2":                0.02 * USD, // $0.016 - $0.020 / image
 	"dall-e-3":                0.04 * USD, // $0.040 - $0.120 / image
 	// https://www.anthropic.com/api#pricing
-	"claude-instant-1.2":       0.8 / 1000 * USD,
-	"claude-2.0":               8.0 / 1000 * USD,
-	"claude-2.1":               8.0 / 1000 * USD,
-	"claude-3-haiku-20240307":  0.25 / 1000 * USD,
-	"claude-3-sonnet-20240229": 3.0 / 1000 * USD,
-	"claude-3-opus-20240229":   15.0 / 1000 * USD,
+	"claude-instant-1.2":         0.8 / 1000 * USD,
+	"claude-2.0":                 8.0 / 1000 * USD,
+	"claude-2.1":                 8.0 / 1000 * USD,
+	"claude-3-haiku-20240307":    0.25 / 1000 * USD,
+	"claude-3-sonnet-20240229":   3.0 / 1000 * USD,
+	"claude-3-5-sonnet-20240620": 3.0 / 1000 * USD,
+	"claude-3-opus-20240229":     15.0 / 1000 * USD,
 	// https://cloud.baidu.com/doc/WENXINWORKSHOP/s/hlrk4akp7
 	"ERNIE-4.0-8K":       0.120 * RMB,
 	"ERNIE-3.5-8K":       0.012 * RMB,
@@ -89,12 +100,11 @@ var ModelRatio = map[string]float64{
 	"bge-large-en":       0.002 * RMB,
 	"tao-8k":             0.002 * RMB,
 	// https://ai.google.dev/pricing
-	"PaLM-2":                    1,
-	"gemini-pro":                1, // $0.00025 / 1k characters -> $0.001 / 1k tokens
-	"gemini-pro-vision":         1, // $0.00025 / 1k characters -> $0.001 / 1k tokens
-	"gemini-1.0-pro-vision-001": 1,
-	"gemini-1.0-pro-001":        1,
-	"gemini-1.5-pro":            1,
+	"gemini-pro":       1, // $0.00025 / 1k characters -> $0.001 / 1k tokens
+	"gemini-1.0-pro":   1,
+	"gemini-1.5-flash": 1,
+	"gemini-1.5-pro":   1,
+	"aqa":              1,
 	// https://open.bigmodel.cn/pricing
 	"glm-4":         0.1 * RMB,
 	"glm-4v":        0.1 * RMB,
@@ -118,7 +128,9 @@ var ModelRatio = map[string]float64{
 	"SparkDesk-v1.1":            1.2858, // ￥0.018 / 1k tokens
 	"SparkDesk-v2.1":            1.2858, // ￥0.018 / 1k tokens
 	"SparkDesk-v3.1":            1.2858, // ￥0.018 / 1k tokens
+	"SparkDesk-v3.1-128K":       1.2858, // ￥0.018 / 1k tokens
 	"SparkDesk-v3.5":            1.2858, // ￥0.018 / 1k tokens
+	"SparkDesk-v4.0":            1.2858, // ￥0.018 / 1k tokens
 	"360GPT_S2_V9":              0.8572, // ¥0.012 / 1k tokens
 	"embedding-bert-512-v1":     0.0715, // ¥0.001 / 1k tokens
 	"embedding_s1_v1":           0.0715, // ¥0.001 / 1k tokens
@@ -135,6 +147,8 @@ var ModelRatio = map[string]float64{
 	"Baichuan2-Turbo-192k": 0.016 * RMB,
 	"Baichuan2-53B":        0.02 * RMB,
 	// https://api.minimax.chat/document/price
+	"abab6.5-chat":  0.03 * RMB,
+	"abab6.5s-chat": 0.01 * RMB,
 	"abab6-chat":    0.1 * RMB,
 	"abab5.5-chat":  0.015 * RMB,
 	"abab5.5s-chat": 0.005 * RMB,
@@ -145,25 +159,59 @@ var ModelRatio = map[string]float64{
 	"mistral-medium-latest": 2.7 / 1000 * USD,
 	"mistral-large-latest":  8.0 / 1000 * USD,
 	"mistral-embed":         0.1 / 1000 * USD,
-	// https://wow.groq.com/
-	"llama2-70b-4096":    0.7 / 1000 * USD,
-	"llama2-7b-2048":     0.1 / 1000 * USD,
-	"mixtral-8x7b-32768": 0.27 / 1000 * USD,
-	"gemma-7b-it":        0.1 / 1000 * USD,
+	// https://wow.groq.com/#:~:text=inquiries%C2%A0here.-,Model,-Current%20Speed
+	"gemma-7b-it":                           0.07 / 1000000 * USD,
+	"mixtral-8x7b-32768":                    0.24 / 1000000 * USD,
+	"llama3-8b-8192":                        0.05 / 1000000 * USD,
+	"llama3-70b-8192":                       0.59 / 1000000 * USD,
+	"gemma2-9b-it":                          0.20 / 1000000 * USD,
+	"llama-3.1-405b-reasoning":              0.89 / 1000000 * USD,
+	"llama-3.1-70b-versatile":               0.59 / 1000000 * USD,
+	"llama-3.1-8b-instant":                  0.05 / 1000000 * USD,
+	"llama3-groq-70b-8192-tool-use-preview": 0.89 / 1000000 * USD,
+	"llama3-groq-8b-8192-tool-use-preview":  0.19 / 1000000 * USD,
 	// https://platform.lingyiwanwu.com/docs#-计费单元
 	"yi-34b-chat-0205": 2.5 / 1000 * RMB,
 	"yi-34b-chat-200k": 12.0 / 1000 * RMB,
 	"yi-vl-plus":       6.0 / 1000 * RMB,
-	// stepfun todo
-	"step-1v-32k": 0.024 * RMB,
-	"step-1-32k":  0.024 * RMB,
-	"step-1-200k": 0.15 * RMB,
+	// https://platform.stepfun.com/docs/pricing/details
+	"step-1-8k":    0.005 / 1000 * RMB,
+	"step-1-32k":   0.015 / 1000 * RMB,
+	"step-1-128k":  0.040 / 1000 * RMB,
+	"step-1-256k":  0.095 / 1000 * RMB,
+	"step-1-flash": 0.001 / 1000 * RMB,
+	"step-2-16k":   0.038 / 1000 * RMB,
+	"step-1v-8k":   0.005 / 1000 * RMB,
+	"step-1v-32k":  0.015 / 1000 * RMB,
+	// aws llama3 https://aws.amazon.com/cn/bedrock/pricing/
+	"llama3-8b-8192(33)":  0.0003 / 0.002,  // $0.0003 / 1K tokens
+	"llama3-70b-8192(33)": 0.00265 / 0.002, // $0.00265 / 1K tokens
+	// https://cohere.com/pricing
+	"command":               0.5,
+	"command-nightly":       0.5,
+	"command-light":         0.5,
+	"command-light-nightly": 0.5,
+	"command-r":             0.5 / 1000 * USD,
+	"command-r-plus":        3.0 / 1000 * USD,
+	// https://platform.deepseek.com/api-docs/pricing/
+	"deepseek-chat":  1.0 / 1000 * RMB,
+	"deepseek-coder": 1.0 / 1000 * RMB,
+	// https://www.deepl.com/pro?cta=header-prices
+	"deepl-zh": 25.0 / 1000 * USD,
+	"deepl-en": 25.0 / 1000 * USD,
+	"deepl-ja": 25.0 / 1000 * USD,
 }
 
-var CompletionRatio = map[string]float64{}
+var CompletionRatio = map[string]float64{
+	// aws llama3
+	"llama3-8b-8192(33)":  0.0006 / 0.0003,
+	"llama3-70b-8192(33)": 0.0035 / 0.00265,
+}
 
-var DefaultModelRatio map[string]float64
-var DefaultCompletionRatio map[string]float64
+var (
+	DefaultModelRatio      map[string]float64
+	DefaultCompletionRatio map[string]float64
+)
 
 func init() {
 	DefaultModelRatio = make(map[string]float64)
@@ -209,19 +257,28 @@ func UpdateModelRatioByJSONString(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), &ModelRatio)
 }
 
-func GetModelRatio(name string) float64 {
+func GetModelRatio(name string, channelType int) float64 {
 	if strings.HasPrefix(name, "qwen-") && strings.HasSuffix(name, "-internet") {
 		name = strings.TrimSuffix(name, "-internet")
 	}
-	ratio, ok := ModelRatio[name]
-	if !ok {
-		ratio, ok = DefaultModelRatio[name]
+	if strings.HasPrefix(name, "command-") && strings.HasSuffix(name, "-internet") {
+		name = strings.TrimSuffix(name, "-internet")
 	}
-	if !ok {
-		logger.SysError("model ratio not found: " + name)
-		return 30
+	model := fmt.Sprintf("%s(%d)", name, channelType)
+	if ratio, ok := ModelRatio[model]; ok {
+		return ratio
 	}
-	return ratio
+	if ratio, ok := DefaultModelRatio[model]; ok {
+		return ratio
+	}
+	if ratio, ok := ModelRatio[name]; ok {
+		return ratio
+	}
+	if ratio, ok := DefaultModelRatio[name]; ok {
+		return ratio
+	}
+	logger.SysError("model ratio not found: " + name)
+	return 30
 }
 
 func CompletionRatio2JSONString() string {
@@ -237,7 +294,17 @@ func UpdateCompletionRatioByJSONString(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), &CompletionRatio)
 }
 
-func GetCompletionRatio(name string) float64 {
+func GetCompletionRatio(name string, channelType int) float64 {
+	if strings.HasPrefix(name, "qwen-") && strings.HasSuffix(name, "-internet") {
+		name = strings.TrimSuffix(name, "-internet")
+	}
+	model := fmt.Sprintf("%s(%d)", name, channelType)
+	if ratio, ok := CompletionRatio[model]; ok {
+		return ratio
+	}
+	if ratio, ok := DefaultCompletionRatio[model]; ok {
+		return ratio
+	}
 	if ratio, ok := CompletionRatio[name]; ok {
 		return ratio
 	}
@@ -256,10 +323,18 @@ func GetCompletionRatio(name string) float64 {
 		return 4.0 / 3.0
 	}
 	if strings.HasPrefix(name, "gpt-4") {
-		if strings.HasSuffix(name, "preview") {
+		if strings.HasPrefix(name, "gpt-4o-mini") || name == "gpt-4o-2024-08-06" {
+			return 4
+		}
+		if strings.HasPrefix(name, "gpt-4-turbo") ||
+			strings.HasPrefix(name, "gpt-4o") ||
+			strings.HasSuffix(name, "preview") {
 			return 3
 		}
 		return 2
+	}
+	if name == "chatgpt-4o-latest" {
+		return 3
 	}
 	if strings.HasPrefix(name, "claude-3") {
 		return 5
@@ -273,9 +348,22 @@ func GetCompletionRatio(name string) float64 {
 	if strings.HasPrefix(name, "gemini-") {
 		return 3
 	}
+	if strings.HasPrefix(name, "deepseek-") {
+		return 2
+	}
 	switch name {
 	case "llama2-70b-4096":
-		return 0.8 / 0.7
+		return 0.8 / 0.64
+	case "llama3-8b-8192":
+		return 2
+	case "llama3-70b-8192":
+		return 0.79 / 0.59
+	case "command", "command-light", "command-nightly", "command-light-nightly":
+		return 2
+	case "command-r":
+		return 3
+	case "command-r-plus":
+		return 5
 	}
 	return 1
 }

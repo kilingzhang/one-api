@@ -5,14 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/songquanpeng/one-api/common/helper"
-	"github.com/songquanpeng/one-api/common/random"
+	"github.com/songquanpeng/one-api/common/render"
 	"io"
 	"net/http"
 	"strings"
 
+	"github.com/songquanpeng/one-api/common/helper"
+	"github.com/songquanpeng/one-api/common/random"
+
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/common"
+	"github.com/songquanpeng/one-api/common/image"
 	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/relay/adaptor/openai"
 	"github.com/songquanpeng/one-api/relay/constant"
@@ -28,13 +31,28 @@ func ConvertRequest(request model.GeneralOpenAIRequest) *ChatRequest {
 			TopP:             request.TopP,
 			FrequencyPenalty: request.FrequencyPenalty,
 			PresencePenalty:  request.PresencePenalty,
+			NumPredict:  	  request.MaxTokens,
+			NumCtx:  	  request.NumCtx,
 		},
 		Stream: request.Stream,
 	}
 	for _, message := range request.Messages {
+		openaiContent := message.ParseContent()
+		var imageUrls []string
+		var contentText string
+		for _, part := range openaiContent {
+			switch part.Type {
+			case model.ContentTypeText:
+				contentText = part.Text
+			case model.ContentTypeImageURL:
+				_, data, _ := image.GetImageFromUrl(part.ImageURL.Url)
+				imageUrls = append(imageUrls, data)
+			}
+		}
 		ollamaRequest.Messages = append(ollamaRequest.Messages, Message{
 			Role:    message.Role,
-			Content: message.StringContent(),
+			Content: contentText,
+			Images:  imageUrls,
 		})
 	}
 	return &ollamaRequest
@@ -53,6 +71,7 @@ func responseOllama2OpenAI(response *ChatResponse) *openai.TextResponse {
 	}
 	fullTextResponse := openai.TextResponse{
 		Id:      fmt.Sprintf("chatcmpl-%s", random.GetUUID()),
+		Model:   response.Model,
 		Object:  "chat.completion",
 		Created: helper.GetTimestamp(),
 		Choices: []openai.TextResponseChoice{choice},
@@ -90,61 +109,67 @@ func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusC
 			return 0, nil, nil
 		}
 		if i := strings.Index(string(data), "}\n"); i >= 0 {
-			return i + 2, data[0:i], nil
+			return i + 2, data[0 : i+1], nil
 		}
 		if atEOF {
 			return len(data), data, nil
 		}
 		return 0, nil, nil
 	})
-	dataChan := make(chan string)
-	stopChan := make(chan bool)
-	go func() {
-		for scanner.Scan() {
-			data := strings.TrimPrefix(scanner.Text(), "}")
-			dataChan <- data + "}"
-		}
-		stopChan <- true
-	}()
+
 	common.SetEventStreamHeaders(c)
-	c.Stream(func(w io.Writer) bool {
-		select {
-		case data := <-dataChan:
-			var ollamaResponse ChatResponse
-			err := json.Unmarshal([]byte(data), &ollamaResponse)
-			if err != nil {
-				logger.SysError("error unmarshalling stream response: " + err.Error())
-				return true
-			}
-			if ollamaResponse.EvalCount != 0 {
-				usage.PromptTokens = ollamaResponse.PromptEvalCount
-				usage.CompletionTokens = ollamaResponse.EvalCount
-				usage.TotalTokens = ollamaResponse.PromptEvalCount + ollamaResponse.EvalCount
-			}
-			response := streamResponseOllama2OpenAI(&ollamaResponse)
-			jsonResponse, err := json.Marshal(response)
-			if err != nil {
-				logger.SysError("error marshalling stream response: " + err.Error())
-				return true
-			}
-			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonResponse)})
-			return true
-		case <-stopChan:
-			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
-			return false
+
+	for scanner.Scan() {
+		data := scanner.Text()
+		if strings.HasPrefix(data, "}") {
+		    data = strings.TrimPrefix(data, "}") + "}"
 		}
-	})
+
+		var ollamaResponse ChatResponse
+		err := json.Unmarshal([]byte(data), &ollamaResponse)
+		if err != nil {
+			logger.SysError("error unmarshalling stream response: " + err.Error())
+			continue
+		}
+
+		if ollamaResponse.EvalCount != 0 {
+			usage.PromptTokens = ollamaResponse.PromptEvalCount
+			usage.CompletionTokens = ollamaResponse.EvalCount
+			usage.TotalTokens = ollamaResponse.PromptEvalCount + ollamaResponse.EvalCount
+		}
+
+		response := streamResponseOllama2OpenAI(&ollamaResponse)
+		err = render.ObjectData(c, response)
+		if err != nil {
+			logger.SysError(err.Error())
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		logger.SysError("error reading stream: " + err.Error())
+	}
+
+	render.Done(c)
+
 	err := resp.Body.Close()
 	if err != nil {
 		return openai.ErrorWrapper(err, "close_response_body_failed", http.StatusInternalServerError), nil
 	}
+
 	return nil, &usage
 }
 
 func ConvertEmbeddingRequest(request model.GeneralOpenAIRequest) *EmbeddingRequest {
 	return &EmbeddingRequest{
-		Model:  request.Model,
-		Prompt: strings.Join(request.ParseInput(), " "),
+		Model: request.Model,
+		Input: request.ParseInput(),
+		Options: &Options{
+			Seed:             int(request.Seed),
+			Temperature:      request.Temperature,
+			TopP:             request.TopP,
+			FrequencyPenalty: request.FrequencyPenalty,
+			PresencePenalty:  request.PresencePenalty,
+		},
 	}
 }
 
@@ -187,15 +212,17 @@ func embeddingResponseOllama2OpenAI(response *EmbeddingResponse) *openai.Embeddi
 	openAIEmbeddingResponse := openai.EmbeddingResponse{
 		Object: "list",
 		Data:   make([]openai.EmbeddingResponseItem, 0, 1),
-		Model:  "text-embedding-v1",
+		Model:  response.Model,
 		Usage:  model.Usage{TotalTokens: 0},
 	}
 
-	openAIEmbeddingResponse.Data = append(openAIEmbeddingResponse.Data, openai.EmbeddingResponseItem{
-		Object:    `embedding`,
-		Index:     0,
-		Embedding: response.Embedding,
-	})
+	for i, embedding := range response.Embeddings {
+		openAIEmbeddingResponse.Data = append(openAIEmbeddingResponse.Data, openai.EmbeddingResponseItem{
+			Object:    `embedding`,
+			Index:     i,
+			Embedding: embedding,
+		})
+	}
 	return &openAIEmbeddingResponse
 }
 

@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/songquanpeng/one-api/common/client"
 	"github.com/songquanpeng/one-api/common/config"
 	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/model"
 	"github.com/songquanpeng/one-api/monitor"
 	"github.com/songquanpeng/one-api/relay/channeltype"
-	"github.com/songquanpeng/one-api/relay/client"
 	"io"
 	"net/http"
 	"strconv"
@@ -79,6 +79,26 @@ type APGC2DGPTUsageResponse struct {
 	TotalAvailable float64 `json:"total_available"`
 	TotalGranted   float64 `json:"total_granted"`
 	TotalUsed      float64 `json:"total_used"`
+}
+
+type SiliconFlowUsageResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Status  bool   `json:"status"`
+	Data    struct {
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		Image         string `json:"image"`
+		Email         string `json:"email"`
+		IsAdmin       bool   `json:"isAdmin"`
+		Balance       string `json:"balance"`
+		Status        string `json:"status"`
+		Introduction  string `json:"introduction"`
+		Role          string `json:"role"`
+		ChargeBalance string `json:"chargeBalance"`
+		TotalBalance  string `json:"totalBalance"`
+		Category      string `json:"category"`
+	} `json:"data"`
 }
 
 // GetAuthHeader get auth header
@@ -203,6 +223,28 @@ func updateChannelAIGC2DBalance(channel *model.Channel) (float64, error) {
 	return response.TotalAvailable, nil
 }
 
+func updateChannelSiliconFlowBalance(channel *model.Channel) (float64, error) {
+	url := "https://api.siliconflow.cn/v1/user/info"
+	body, err := GetResponseBody("GET", url, channel, GetAuthHeader(channel.Key))
+	if err != nil {
+		return 0, err
+	}
+	response := SiliconFlowUsageResponse{}
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return 0, err
+	}
+	if response.Code != 20000 {
+		return 0, fmt.Errorf("code: %d, message: %s", response.Code, response.Message)
+	}
+	balance, err := strconv.ParseFloat(response.Data.Balance, 64)
+	if err != nil {
+		return 0, err
+	}
+	channel.UpdateBalance(balance)
+	return balance, nil
+}
+
 func updateChannelBalance(channel *model.Channel) (float64, error) {
 	baseURL := channeltype.ChannelBaseURLs[channel.Type]
 	if channel.GetBaseURL() == "" {
@@ -227,6 +269,8 @@ func updateChannelBalance(channel *model.Channel) (float64, error) {
 		return updateChannelAPI2GPTBalance(channel)
 	case channeltype.AIGC2D:
 		return updateChannelAIGC2DBalance(channel)
+	case channeltype.SiliconFlow:
+		return updateChannelSiliconFlowBalance(channel)
 	default:
 		return 0, errors.New("尚未实现")
 	}

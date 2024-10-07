@@ -6,6 +6,7 @@ import (
 	"github.com/songquanpeng/one-api/common"
 	"github.com/songquanpeng/one-api/common/blacklist"
 	"github.com/songquanpeng/one-api/common/config"
+	"github.com/songquanpeng/one-api/common/helper"
 	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/common/random"
 	"gorm.io/gorm"
@@ -38,6 +39,7 @@ type User struct {
 	GitHubId         string `json:"github_id" gorm:"column:github_id;index"`
 	WeChatId         string `json:"wechat_id" gorm:"column:wechat_id;index"`
 	LarkId           string `json:"lark_id" gorm:"column:lark_id;index"`
+	OidcId           string `json:"oidc_id" gorm:"column:oidc_id;index"`
 	VerificationCode string `json:"verification_code" gorm:"-:all"`                                    // this field is only for Email verification, don't save it to database!
 	AccessToken      string `json:"access_token" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
 	Quota            int64  `json:"quota" gorm:"bigint;default:0"`
@@ -140,6 +142,22 @@ func (user *User) Insert(inviterId int) error {
 			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", common.LogQuota(config.QuotaForInviter)))
 		}
 	}
+	// create default token
+	cleanToken := Token{
+		UserId:         user.Id,
+		Name:           "default",
+		Key:            random.GenerateKey(),
+		CreatedTime:    helper.GetTimestamp(),
+		AccessedTime:   helper.GetTimestamp(),
+		ExpiredTime:    -1,
+		RemainQuota:    -1,
+		UnlimitedQuota: true,
+	}
+	result.Error = cleanToken.Insert()
+	if result.Error != nil {
+		// do not block
+		logger.SysError(fmt.Sprintf("create default token for user %d failed: %s", user.Id, result.Error.Error()))
+	}
 	return nil
 }
 
@@ -228,6 +246,14 @@ func (user *User) FillUserByLarkId() error {
 	return nil
 }
 
+func (user *User) FillUserByOidcId() error {
+	if user.OidcId == "" {
+		return errors.New("oidc id 为空！")
+	}
+	DB.Where(User{OidcId: user.OidcId}).First(user)
+	return nil
+}
+
 func (user *User) FillUserByWeChatId() error {
 	if user.WeChatId == "" {
 		return errors.New("WeChat id 为空！")
@@ -258,6 +284,10 @@ func IsGitHubIdAlreadyTaken(githubId string) bool {
 
 func IsLarkIdAlreadyTaken(githubId string) bool {
 	return DB.Where("lark_id = ?", githubId).Find(&User{}).RowsAffected == 1
+}
+
+func IsOidcIdAlreadyTaken(oidcId string) bool {
+	return DB.Where("oidc_id = ?", oidcId).Find(&User{}).RowsAffected == 1
 }
 
 func IsUsernameAlreadyTaken(username string) bool {

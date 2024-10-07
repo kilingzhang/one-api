@@ -98,6 +98,21 @@ export async function onLarkOAuthClicked(lark_client_id) {
   window.open(`https://open.feishu.cn/open-apis/authen/v1/index?redirect_uri=${redirect_uri}&app_id=${lark_client_id}&state=${state}`);
 }
 
+export async function onOidcClicked(auth_url, client_id, openInNewTab = false) {
+  const state = await getOAuthState();
+  if (!state) return;
+  const redirect_uri = `${window.location.origin}/oauth/oidc`;
+  const response_type = "code";
+  const scope = "openid profile email";
+  const url = `${auth_url}?client_id=${client_id}&redirect_uri=${redirect_uri}&response_type=${response_type}&scope=${scope}&state=${state}`;
+  if (openInNewTab) {
+    window.open(url);
+  } else
+  {
+    window.location.href = url;
+  }
+}
+
 export function isAdmin() {
   let user = localStorage.getItem('user');
   if (!user) return false;
@@ -192,4 +207,41 @@ export function removeTrailingSlash(url) {
   } else {
     return url;
   }
+}
+
+let channelModels = undefined;
+export async function loadChannelModels() {
+  const res = await API.get('/api/models');
+  const { success, data } = res.data;
+  if (!success) {
+    return;
+  }
+  channelModels = data;
+  localStorage.setItem('channel_models', JSON.stringify(data));
+}
+
+export function getChannelModels(type) {
+  if (channelModels !== undefined && type in channelModels) {
+    return channelModels[type];
+  }
+  let models = localStorage.getItem('channel_models');
+  if (!models) {
+    return [];
+  }
+  channelModels = JSON.parse(models);
+  if (type in channelModels) {
+    return channelModels[type];
+  }
+  return [];
+}
+
+export function copy(text, name = '') {
+  try {
+    navigator.clipboard.writeText(text);
+  } catch (error) {
+    text = `复制${name}失败，请手动复制：<br /><br />${text}`;
+    enqueueSnackbar(<SnackbarHTMLContent htmlContent={text} />, getSnackbarOptions('COPY'));
+    return;
+  }
+  showSuccess(`复制${name}成功！`);
 }

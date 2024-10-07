@@ -34,6 +34,17 @@ const (
 	Ollama
 	LingYiWanWu
 	StepFun
-
+	AwsClaude
+	Coze
+	Cohere
+	DeepSeek
+	Cloudflare
+	DeepL
+	TogetherAI
+	Doubao
+	Novita
+	VertextAI
+	Proxy
+	SiliconFlow
 	Dummy
 )

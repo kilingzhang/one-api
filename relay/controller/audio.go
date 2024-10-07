@@ -7,34 +7,37 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/common"
+	"github.com/songquanpeng/one-api/common/client"
 	"github.com/songquanpeng/one-api/common/config"
+	"github.com/songquanpeng/one-api/common/ctxkey"
 	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/model"
-	"github.com/songquanpeng/one-api/relay/adaptor/azure"
 	"github.com/songquanpeng/one-api/relay/adaptor/openai"
 	"github.com/songquanpeng/one-api/relay/billing"
 	billingratio "github.com/songquanpeng/one-api/relay/billing/ratio"
 	"github.com/songquanpeng/one-api/relay/channeltype"
-	"github.com/songquanpeng/one-api/relay/client"
+	"github.com/songquanpeng/one-api/relay/meta"
 	relaymodel "github.com/songquanpeng/one-api/relay/model"
 	"github.com/songquanpeng/one-api/relay/relaymode"
-	"io"
-	"net/http"
-	"strings"
 )
 
 func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatusCode {
 	ctx := c.Request.Context()
+	meta := meta.GetByContext(c)
 	audioModel := "whisper-1"
 
-	tokenId := c.GetInt("token_id")
-	channelType := c.GetInt("channel")
-	channelId := c.GetInt("channel_id")
-	userId := c.GetInt("id")
-	group := c.GetString("group")
-	tokenName := c.GetString("token_name")
+	tokenId := c.GetInt(ctxkey.TokenId)
+	channelType := c.GetInt(ctxkey.Channel)
+	channelId := c.GetInt(ctxkey.ChannelId)
+	userId := c.GetInt(ctxkey.Id)
+	group := c.GetString(ctxkey.Group)
+	tokenName := c.GetString(ctxkey.TokenName)
 
 	var ttsRequest openai.TextToSpeechRequest
 	if relayMode == relaymode.AudioSpeech {
@@ -51,7 +54,7 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 		}
 	}
 
-	modelRatio := billingratio.GetModelRatio(audioModel)
+	modelRatio := billingratio.GetModelRatio(audioModel, channelType)
 	groupRatio := billingratio.GetGroupRatio(group)
 	ratio := modelRatio * groupRatio
 	var quota int64
@@ -107,7 +110,7 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 	}()
 
 	// map model name
-	modelMapping := c.GetString("model_mapping")
+	modelMapping := c.GetString(ctxkey.ModelMapping)
 	if modelMapping != "" {
 		modelMap := make(map[string]string)
 		err := json.Unmarshal([]byte(modelMapping), &modelMap)
@@ -121,13 +124,13 @@ func RelayAudioHelper(c *gin.Context, relayMode int) *relaymodel.ErrorWithStatus
 
 	baseURL := channeltype.ChannelBaseURLs[channelType]
 	requestURL := c.Request.URL.String()
-	if c.GetString("base_url") != "" {
-		baseURL = c.GetString("base_url")
+	if c.GetString(ctxkey.BaseURL) != "" {
+		baseURL = c.GetString(ctxkey.BaseURL)
 	}
 
 	fullRequestURL := openai.GetFullRequestURL(baseURL, requestURL, channelType)
 	if channelType == channeltype.Azure {
-		apiVersion := azure.GetAPIVersion(c)
+		apiVersion := meta.Config.APIVersion
 		if relayMode == relaymode.AudioTranscription {
 			// https://learn.microsoft.com/en-us/azure/ai-services/openai/whisper-quickstart?tabs=command-line#rest-api
 			fullRequestURL = fmt.Sprintf("%s/openai/deployments/%s/audio/transcriptions?api-version=%s", baseURL, audioModel, apiVersion)
